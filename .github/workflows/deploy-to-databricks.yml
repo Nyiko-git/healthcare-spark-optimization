@@ -1,0 +1,49 @@
+name: Deploy Notebooks to Databricks
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Databricks CLI
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/script.sh | sh
+
+      - name: Configure Databricks CLI
+        run: |
+          databricks configure --host ${{ secrets.DATABRICKS_HOST }} --token ${{ secrets.DATABRICKS_TOKEN }}
+
+      - name: Deploy all notebooks
+        run: |
+          # Deploy each .py notebook to Databricks workspace
+          for notebook in $(find . -name "*.py" -not -path "./.github/*"); do
+            # Remove .py extension and ./ prefix for the target path
+            base=$(basename "$notebook" .py)
+            dir=$(dirname "$notebook")
+
+            # Create target directory in Databricks workspace
+            target_dir="/Users/${{ secrets.DATABRICKS_USER }}/healthcare-spark-optimization/${dir#.}"
+            target_dir=$(echo "$target_dir" | sed 's#\./##')
+            databricks workspace mkdirs "$target_dir"
+
+            # Import the notebook
+            target_path="${target_dir}/${base}"
+            echo "Deploying: $notebook -> $target_path"
+            databricks workspace import \
+              --language PYTHON \
+              --format SOURCE \
+              --overwrite \
+              "$notebook" \
+              "$target_path"
+          done
+
+      - name: Verify deployment
+        run: |
+          databricks workspace list "/Users/${{ secrets.DATABRICKS_USER }}/healthcare-spark-optimization/"
