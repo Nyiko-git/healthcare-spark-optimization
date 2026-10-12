@@ -959,3 +959,4 @@ result = (
 # MAGIC - You can organize notebooks in subdirectories — the pipeline preserves the structure
 # MAGIC - The pipeline only runs on pushes to `main` — feature branches won't trigger deployment
 # MAGIC - You can also trigger the workflow manually from GitHub's Actions tab (`workflow_dispatch`)
+#nyiko
