@@ -1,13 +1,15 @@
 name: Deploy Notebooks to Databricks
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -16,26 +18,28 @@ jobs:
         run: |
           curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/script.sh | sh
 
-      - name: Configure Databricks CLI
-        run: |
-          databricks configure --host ${{ secrets.DATABRICKS_HOST }} --token ${{ secrets.DATABRICKS_TOKEN }}
-
       - name: Deploy all notebooks
         run: |
-          # Deploy each .py notebook to Databricks workspace
           for notebook in $(find . -name "*.py" -not -path "./.github/*"); do
-            # Remove .py extension and ./ prefix for the target path
             base=$(basename "$notebook" .py)
             dir=$(dirname "$notebook")
 
-            # Create target directory in Databricks workspace
-            target_dir="/Users/${{ secrets.DATABRICKS_USER }}/healthcare-spark-optimization/${dir#.}"
-            target_dir=$(echo "$target_dir" | sed 's#\./##')
+            # Clean up the directory string safely
+            clean_dir=$(echo "$dir" | sed 's#^\./##' | sed 's#^\.$##')
+
+            # Base target directory for your healthcare optimization project
+            target_dir="/Users/${{ secrets.DATABRICKS_USER }}/healthcare-spark-optimization"
+
+            # Append subdirectories if they exist
+            if [ -n "$clean_dir" ]; then
+              target_dir="$target_dir/$clean_dir"
+            fi
+
             databricks workspace mkdirs "$target_dir"
 
-            # Import the notebook
             target_path="${target_dir}/${base}"
             echo "Deploying: $notebook -> $target_path"
+
             databricks workspace import \
               --language PYTHON \
               --format SOURCE \

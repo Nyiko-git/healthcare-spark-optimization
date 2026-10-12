@@ -1,0 +1,72 @@
+name: Databricks CI/CD Pipeline
+
+# 1. TRIGGERS: This section tells GitHub when to run the pipeline.
+on:
+  push:
+    branches:
+      - '**'  # Sync every pushed branch to its own Databricks Git folder
+  pull_request:
+    branches:
+      - main  # Runs a test/validation when someone opens a Pull Request to 'main'
+  workflow_dispatch:  # Adds a button in the GitHub UI to trigger the pipeline manually
+
+# 2. JOBS: This section defines the actual steps the pipeline will take.
+jobs:
+  validate:
+    name: Validate Python notebooks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check Python syntax
+        run: python -m py_compile healthcare_spark_optimization_bad_queries.py
+
+  deploy-to-prod:
+    name: Sync Branch to Databricks
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      DATABRICKS_REPO_ID: ${{ secrets.DATABRICKS_REPO_ID }}
+
+    steps:
+      - name: Checkout Repository Code
+        uses: actions/checkout@v4
+
+      - name: Setup Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Update Target Git Folder in Databricks
+        run: |
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            if [ -z "$DATABRICKS_REPO_ID" ]; then
+              echo "DATABRICKS_REPO_ID must be configured in GitHub Actions secrets."
+              exit 1
+            fi
+            databricks repos update "$DATABRICKS_REPO_ID" --branch main
+          else
+            branch_slug=$(printf '%s' "$GITHUB_REF_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+|-+$//g' | cut -c1-48)
+            if [ -z "$branch_slug" ]; then
+              branch_slug=branch
+            fi
+            branch_hash=$(printf '%s' "$GITHUB_REF_NAME" | sha256sum | cut -c1-10)
+            target_path="/Repos/Nyiko-git/healthcare-spark-optimization-branches-${branch_slug}-${branch_hash}"
+            repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+
+            if databricks repos get "$target_path" >/dev/null 2>&1; then
+              databricks repos update "$target_path" --branch "$GITHUB_REF_NAME"
+            else
+              databricks repos create "$repo_url" gitHub --path "$target_path"
+              databricks repos update "$target_path" --branch "$GITHUB_REF_NAME"
+            fi
+          fi
