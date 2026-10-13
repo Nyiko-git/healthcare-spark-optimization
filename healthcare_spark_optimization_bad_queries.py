@@ -8,7 +8,7 @@
 spark.sql("CREATE DATABASE IF NOT EXISTS spark_optimization")
 
 spark.sql("USE spark_optimization")
-uhiuhi
+fddfdfass
 # COMMAND ----------
 
 # DBTITLE 1,2. Configuration
